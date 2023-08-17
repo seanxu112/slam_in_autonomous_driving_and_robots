@@ -14,6 +14,7 @@
 
 DEFINE_double(angular_velocity, 10.0, "角速度（角度）制");
 DEFINE_double(linear_velocity, 5.0, "车辆前进线速度 m/s");
+DEFINE_double(gravity, 9.81, "车辆前进线速度 m/s");
 DEFINE_bool(use_quaternion, false, "是否使用四元数计算");
 
 int main(int argc, char** argv) {
@@ -32,12 +33,16 @@ int main(int argc, char** argv) {
     SE3 pose;                                                                    // TWB表示的位姿
     Vec3d omega(0, 0, angular_velocity_rad);                                     // 角速度矢量
     Vec3d v_body(FLAGS_linear_velocity, 0, 0);                                   // 本体系速度
+    Vec3d a_world(0, 0, -FLAGS_gravity);
+    Vec3d a_body(0, 0, 0);
     const double dt = 0.05;                                                      // 每次更新的时间
 
     while (ui.ShouldQuit() == false) {
         // 更新自身位置
+        v_body += pose.so3().inverse() * a_world * dt;
         Vec3d v_world = pose.so3() * v_body;
-        pose.translation() += v_world * dt;
+
+        pose.translation() += v_world * dt + a_body * dt * dt / 2.;
 
         // 更新自身旋转
         if (FLAGS_use_quaternion) {
@@ -48,7 +53,8 @@ int main(int argc, char** argv) {
             pose.so3() = pose.so3() * SO3::exp(omega * dt);
         }
 
-        LOG(INFO) << "pose: " << pose.translation().transpose();
+        // LOG(INFO) << "pose: " << pose.translation().transpose();
+        LOG(INFO) << "v_world: " << v_world.transpose();
         ui.UpdateNavState(sad::NavStated(0, pose, v_world));
 
         usleep(dt * 1e6);
