@@ -7,6 +7,7 @@ P2:
 
 <img src="HW2-1-2.jpg" />
 基本上就是把矩阵乘出来写：
+
 ```
     Vec18T new_dx = Vec18T::Zero();
     new_dx.template block<3,1>(0,0) = new_dx.template block<3,1>(0,0) + new_dx.template block<3,1>(3,0) * dt;
@@ -158,3 +159,6 @@ bool ESKF<S>::ObserveSE3(const SE3& pose, double trans_noise, double ang_noise) 
         cov_ = J * cov_ * J.transpose();
     }
 ```
+
+结果和原来一样：
+<img src="P3.png" />
