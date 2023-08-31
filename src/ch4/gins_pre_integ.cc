@@ -91,6 +91,7 @@ void GinsPreInteg::AddGnss(const GNSS& gnss) {
 void GinsPreInteg::AddOdom(const sad::Odom& odom) {
     last_odom_ = odom;
     last_odom_set_ = true;
+    // Optimize();
 }
 
 void GinsPreInteg::Optimize() {
@@ -214,6 +215,8 @@ void GinsPreInteg::Optimize() {
         last_odom_set_ = false;
     }
 
+    // std::cout << edge_inertial->_jacobianOplus;
+
     optimizer.setVerbose(options_.verbose_);
     optimizer.initializeOptimization();
     optimizer.optimize(20);
@@ -249,6 +252,8 @@ void GinsPreInteg::Optimize() {
     options_.preinteg_options_.init_bg_ = this_frame_->bg_;
     options_.preinteg_options_.init_ba_ = this_frame_->ba_;
     pre_integ_ = std::make_shared<IMUPreintegration>(options_.preinteg_options_);
+    std::cout << edge_inertial->GetHessian() << "\n";
+    assert(1==2);
 }
 
 NavStated GinsPreInteg::GetState() const {
