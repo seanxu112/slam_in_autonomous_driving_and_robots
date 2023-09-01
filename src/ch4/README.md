@@ -2,11 +2,12 @@
 P1:
 
 
-<img src="HW3-1.jpg" />
+<img src="HW3-2.png" />
 
 P2:
 
-<img src="P2.jpg" />
+<img src="P2.png" />
+可以看出，因为Odom的频率快很多，在一些GNSS信号不好的地方路径也没有偏离
 基本上就是把Optimize()函数从AddGNSS里面加到AddOdom()
 
 
