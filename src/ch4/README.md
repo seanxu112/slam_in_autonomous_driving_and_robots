@@ -2,7 +2,7 @@
 P1:
 
 
-<img src="HW3-2.png" />
+<img src="HW3-1.png" />
 
 P2:
 
