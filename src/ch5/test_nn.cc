@@ -156,7 +156,8 @@ TEST(CH5_TEST, GRID_NN) {
     // 对比不同种类的grid
     sad::GridNN<2> grid0(0.1, sad::GridNN<2>::NearbyType::CENTER), grid4(0.1, sad::GridNN<2>::NearbyType::NEARBY4),
         grid8(0.1, sad::GridNN<2>::NearbyType::NEARBY8);
-    sad::GridNN<3> grid3(0.1, sad::GridNN<3>::NearbyType::NEARBY6), grid18(0.1, sad::GridNN<3>::NearbyType::NEARBY18);
+    sad::GridNN<3> grid3(0.1, sad::GridNN<3>::NearbyType::NEARBY6);
+    sad::GridNN<3> grid18(0.1, sad::GridNN<3>::NearbyType::NEARBY18);
 
     grid0.SetPointCloud(first);
     grid4.SetPointCloud(first);
@@ -217,13 +218,13 @@ TEST(CH5_TEST, GRID_NN) {
 
     LOG(INFO) << "===================";
     sad::evaluate_and_call(
-        [&first, &second, &grid3, &matches]() { grid3.GetClosestPointForCloudMT(first, second, matches); },
+        [&first, &second, &grid18, &matches]() { grid18.GetClosestPointForCloud(first, second, matches); },
         "Grid 3D 18 体素 单线程", 10);
     EvaluateMatches(truth_matches, matches);
 
     LOG(INFO) << "===================";
     sad::evaluate_and_call(
-        [&first, &second, &grid3, &matches]() { grid3.GetClosestPointForCloudMT(first, second, matches); },
+        [&first, &second, &grid18, &matches]() { grid18.GetClosestPointForCloudMT(first, second, matches); },
         "Grid 3D 18 体素 多线程", 10);
     EvaluateMatches(truth_matches, matches);
 
