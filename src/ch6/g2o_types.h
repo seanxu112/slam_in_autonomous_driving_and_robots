@@ -32,6 +32,38 @@ class VertexSE2 : public g2o::BaseVertex<3, SE2> {
     bool write(std::ostream& os) const override { return true; }
 };
 
+/**Edge for Point to Point residual */
+class EdgeICP_P2P : public g2o::BaseUnaryEdge<2, Vec2d, VertexSE2> {
+   public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+    EdgeICP_P2P() {}
+    EdgeICP_P2P(double rho_, double r_, Vec2d q_i_): rho(rho_), r(r_), q_i(q_i_){}
+
+    void computeError() override {
+        VertexSE2* current_pose = (VertexSE2*)_vertices[0];
+        double x_ = current_pose->estimate().translation()[0];
+        double y_ = current_pose->estimate().translation()[1];
+        double theta_ = current_pose->estimate().so2().log();
+        Vec2d p_i = {x_ + r * std::cos(rho+theta_), y_ + r * std::sin(rho+theta_)};
+        _error = p_i - q_i;
+    }
+
+    // TODO jacobian
+    void linearizeOplus() override {
+        VertexSE2* current_pose = (VertexSE2*)_vertices[0];
+        double theta_ = current_pose->estimate().so2().log();
+        _jacobianOplusXi << 1, 0, 0, 1, -r * std::sin(rho + theta_), r * std::cos(rho + theta_);
+    }
+    bool read(std::istream& is) override { return true; }
+    bool write(std::ostream& os) const override { return true; }
+
+   private:
+        double rho;
+        double r;
+        double theta_, x_, y_;
+        Vec2d q_i;
+};
+
 class EdgeSE2LikelihoodFiled : public g2o::BaseUnaryEdge<1, double, VertexSE2> {
    public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -127,6 +159,7 @@ class EdgeSE2 : public g2o::BaseBinaryEdge<3, SE2, VertexSE2, VertexSE2> {
 
    private:
 };
+
 
 }  // namespace sad
 

@@ -34,6 +34,9 @@ class Icp2d {
     /// 使用高斯牛顿法进行配准
     bool AlignGaussNewton(SE2& init_pose);
 
+    /// 使用G2O进行P2P配准
+    bool AlignGaussNewtonP2P(SE2& init_pose);
+
     /// 使用高斯牛顿法进行配准, Point-to-Plane
     bool AlignGaussNewtonPoint2Plane(SE2& init_pose);
 
