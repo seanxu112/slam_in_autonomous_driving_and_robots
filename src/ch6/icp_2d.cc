@@ -156,7 +156,7 @@ bool Icp2d::AlignGaussNewtonP2P(SE2& init_pose) {
             }
         }
 
-        optimizer.setVerbose(true);
+        optimizer.setVerbose(false);
         optimizer.initializeOptimization();
         optimizer.optimize(1);
         current_pose = v->estimate();
@@ -255,6 +255,95 @@ bool Icp2d::AlignGaussNewtonPoint2Plane(SE2& init_pose) {
               << ", theta: " << current_pose.so2().log();
 
     return true;
+}
+
+
+bool Icp2d::AlignGaussNewtonP2L(SE2& init_pose) {
+    SE2 current_pose = init_pose;
+
+    const double range_th = 15.0;  // 不考虑太远的scan，不准
+    const double rk_delta = 0.8;
+    const float max_dis = 0.3;  
+    const int min_effect_pts = 20;  // 最小有效点数
+
+    
+    for (int iter = 0; iter < 3; iter++){
+        using BlockSolverType = g2o::BlockSolver<g2o::BlockSolverTraits<3, 1>>;
+        using LinearSolverType = g2o::LinearSolverCholmod<BlockSolverType::PoseMatrixType>;
+        auto* solver = new g2o::OptimizationAlgorithmLevenberg(
+            g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>()));
+        g2o::SparseOptimizer optimizer;
+        optimizer.setAlgorithm(solver);
+        auto* v = new VertexSE2();
+        v->setId(0);
+        v->setEstimate(current_pose);
+        optimizer.addVertex(v);
+
+        int effective_num = 0;  // 有效点数
+
+    // 遍历source
+        for (size_t i = 0; i < source_scan_->ranges.size(); ++i) {
+            double r = source_scan_->ranges[i];
+            if (r < source_scan_->range_min || r > source_scan_->range_max) {
+                continue;
+            }
+
+            if (r > range_th) {
+                continue;
+            }
+
+            double angle = source_scan_->angle_min + i * source_scan_->angle_increment;
+            if (angle < source_scan_->angle_min + 30 * M_PI / 180.0 || angle > source_scan_->angle_max - 30 * M_PI / 180.0) {
+                continue;
+            }
+
+            Vec2d q_i;
+
+            Vec2d pw = current_pose * Vec2d(r * std::cos(angle), r * std::sin(angle));
+            Point2d pt;
+            pt.x = pw.x();
+            pt.y = pw.y();
+            // 最近邻
+            std::vector<int> nn_idx;
+            std::vector<float> dis;
+            kdtree_.nearestKSearch(pt, 5, nn_idx, dis);
+
+            std::vector<Vec2d> effective_pts;  // 有效点
+            for (int j = 0; j < nn_idx.size(); ++j) {
+                if (dis[j] < max_dis) {
+                    effective_pts.emplace_back(
+                        Vec2d(target_cloud_->points[nn_idx[j]].x, target_cloud_->points[nn_idx[j]].y));
+                }
+            }
+
+            if (effective_pts.size() < 3) {
+                continue;
+            }
+
+            // 拟合直线，组装J、H和误差
+            Vec3d line_coeffs;
+            if (math::FitLine2D(effective_pts, line_coeffs)) {
+                // std::cout << "line_coeffs[0]: " << line_coeffs[0] << std::endl;
+                effective_num++;
+                auto* e = new EdgeICP_P2L(angle, r, line_coeffs);
+                e->setVertex(0, v);
+                e->setInformation(Eigen::Matrix<double, 1, 1>::Identity());
+                optimizer.addEdge(e);
+            }
+        }
+        if (effective_num < min_effect_pts) {
+            return false;
+        }
+
+        optimizer.setVerbose(false);
+        optimizer.initializeOptimization();
+        optimizer.optimize(1);
+        current_pose = v->estimate();
+    }
+
+    init_pose = current_pose;
+    return true;
+
 }
 
 void Icp2d::BuildTargetKdTree() {
