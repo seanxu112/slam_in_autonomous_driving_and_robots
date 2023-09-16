@@ -250,154 +250,259 @@ bool Icp2d::AlignGaussNewtonP2L(SE2& init_pose) {
 
 ```
 
+
+在test_2d_icp_s2s.cc中加入了两个算法
+```
+if (fLS::FLAGS_method == "point2point") {
+                                 icp.AlignGaussNewton(pose);
+                             } else if (fLS::FLAGS_method == "point2plane") {
+                                 icp.AlignGaussNewtonPoint2Plane(pose);
+                             } else if (fLS::FLAGS_method == "point2point_g2o") {
+                                 icp.AlignGaussNewtonP2P(pose);
+                             } else if (fLS::FLAGS_method == "point2line_g2o") {
+                                 icp.AlignGaussNewtonP2L(pose);
+                             }
+```                  
+
 <img src="P1_p2l.png" />
 
 实现结果上来看和手动实现的差别不大。
 
 
 P2
+
+看了一下math：：GetPixelValue已经是用了插值，所以直接在AlignGaussNewton里面用了这个函数。
 ```
-0230907 01:02:52.285648 17573 sys_utils.h:32] 方法 Grid 3D 单线程 平均调用时间/次数: 7.50573/10 毫秒.
-I20230907 01:02:52.285670 17573 test_nn.cc:108] truth: 18779, esti: 8572
-I20230907 01:02:52.351713 17573 test_nn.cc:134] precision: 0.911339, recall: 0.415997, fp: 760, fn: 10967
-I20230907 01:02:52.351732 17573 test_nn.cc:213] ===================
-I20230907 01:02:52.368994 17573 sys_utils.h:32] 方法 Grid 3D 多线程 平均调用时间/次数: 1.7251/10 毫秒.
-I20230907 01:02:52.369032 17573 test_nn.cc:108] truth: 18779, esti: 18779
-I20230907 01:02:52.484673 17573 test_nn.cc:134] precision: 0.911339, recall: 0.415997, fp: 760, fn: 10967
-I20230907 01:02:52.484694 17573 test_nn.cc:219] ===================
-I20230907 01:02:52.631883 17573 sys_utils.h:32] 方法 Grid 3D 18 体素 单线程 平均调用时间/次数: 14.7177/10 毫秒.
-I20230907 01:02:52.631903 17573 test_nn.cc:108] truth: 18779, esti: 10070
-I20230907 01:02:52.699419 17573 test_nn.cc:134] precision: 0.964846, recall: 0.517386, fp: 354, fn: 9063
-I20230907 01:02:52.699427 17573 test_nn.cc:225] ===================
-I20230907 01:02:52.730659 17573 sys_utils.h:32] 方法 Grid 3D 18 体素 多线程 平均调用时间/次数: 3.12215/10 毫秒.
-I20230907 01:02:52.730824 17573 test_nn.cc:108] truth: 18779, esti: 18779
-I20230907 01:02:52.831476 17573 test_nn.cc:134] precision: 0.964846, recall: 0.517386, fp: 354, fn: 9063
+            if (pf[0] >= image_boarder && pf[0] < field_.cols - image_boarder && pf[1] >= image_boarder &&
+                pf[1] < field_.rows - image_boarder) {
+                effective_num++;
+
+                // 图像梯度
+                // float dx = 0.5 * (field_.at<float>(pf[1], pf[0] + 1) - field_.at<float>(pf[1], pf[0] - 1));
+                // float dy = 0.5 * (field_.at<float>(pf[1] + 1, pf[0]) - field_.at<float>(pf[1] - 1, pf[0]));
+                float dx = 0.5 * (math::GetPixelValue<float>(field_, pf[0] + 1, pf[1]) -
+                              math::GetPixelValue<float>(field_, pf[0] - 1, pf[1]));
+                float dy = 0.5 * (math::GetPixelValue<float>(field_, pf[0], pf[1] + 1) -
+                              math::GetPixelValue<float>(field_, pf[0], pf[1] - 1));
+
+                Vec3d J;
+                J << resolution_ * dx, resolution_ * dy,
+                    -resolution_ * dx * r * std::sin(angle + theta) + resolution_ * dy * r * std::cos(angle + theta);
+                H += J * J.transpose();
+
+                float e = field_.at<float>(pf[1], pf[0]);
+                b += -J * e;
+
+                cost += e * e;
+            } else {
+                has_outside_pts_ = true;
+            }
 ```
-可以看到18体素的速度比6体素慢很多，但是准确率和recall都高了不少。
-
-P2:
-
-<img src="HW 4.png" />
-
+<img src="P2.png" />
+效果也没有什么区别
 
 P3:
-将nanoflann.h放到文件夹里，再把nanoflann里的utils.h中的PointCloud放到test_nn.cc中（因为例子中是用这个）。
-尝试了一下用gridnn的形式来搭nanoflann的实现。一开始把KDTreeSingleIndexAdaptor放在getClosestPoint函数里面，但是速度太慢了，
-放在构建函数中后编译错误，应该是KDTreeSingleIndexAdaptor没有默认（无输入的）构建函数所以遇到了一些问题，最后直接在test_nn.cc中实现了nanoflann
+这边我尝试了以下做法：
+1. 将scan转化成点云
+2. 用pcl ransac算法找出最多点的直线
+3. 如果inlier少于30，说明剩下的都是零散的点，直接结束拟合直线
+4. 不然的话将直线上的点剔除点云后继续找最多点的直线，并且记录下直线的模型，直到上一步或者点云只剩下70个点退出
+5. 用记录下的直线模型算出没条线的斜率
+6. 将斜率排序
+7. 如果最大斜率和最小斜率之差足够大，或者剩下的点云还有很多，那么点云没有问题
+8. else点云可能有退化问题。
 
-一开始使用了findNeighbors函数来找，但是在实现的时候没有找到5NN的实现方法，最后用了knnSearch 来做5NN
+
 
 ```
-TEST(CH5_TEST, NANOFLANN_KNN) {
-    sad::CloudPtr first(new sad::PointCloudType), second(new sad::PointCloudType);
-    pcl::io::loadPCDFile(FLAGS_first_scan_path, *first);
-    pcl::io::loadPCDFile(FLAGS_second_scan_path, *second);
+void pruneCurrentScan(sad::CloudPtr& cloud_in, Eigen::VectorXf &coefficients, bool negative)
+{
+	// If negative = True, remove all points on the line based on the coefficients
+	// If negative = False, remove all points outside of the line based on the coefficients
+    pcl::ExtractIndices<sad::PointType> extractor;
+	pcl::Indices inliers;
+	pcl::PointIndices::Ptr inliers_pts (new pcl::PointIndices);
+	std::size_t count_inliers;
 
-    if (first->empty() || second->empty()) {
-        LOG(ERROR) << "cannot load cloud";
-        FAIL();
-    }
+	extractor.setNegative(negative);
+	extractor.setInputCloud(cloud_in);
 
-    // voxel grid 至 0.05
-    sad::VoxelGrid(first);
-    sad::VoxelGrid(second);
+    std::vector< double > dists;
 
-    PointCloud_flann<float> first_cloud;
-    first_cloud.pts.resize(first->size());
-    std::vector<size_t> num_index(first->size());
-    std::for_each(num_index.begin(), num_index.end(), [idx = 0](size_t& i) mutable { i = idx++; });
+	pcl::SampleConsensusModelLine<sad::PointType>::Ptr line_model(new pcl::SampleConsensusModelLine<sad::PointType> (cloud_in)); //pcl::SampleConsensusModelPtr
+	line_model->selectWithinDistance(coefficients, 0.3, inliers);
+    // line_model->getDistancesToModel(coefficients, dists);
+    // std::cout << "dists: ";
+    // for (size_t idx = 0; idx < dists.size(); idx++)
+    //     std::cout << dists[idx] << ", ";
+    // std::cout << std::endl;
+	inliers_pts->indices = inliers;
+	extractor.setIndices(inliers_pts);
+	extractor.filter(*cloud_in);
 
-    std::for_each(num_index.begin(), num_index.end(), [&first_cloud, &first, this](const size_t& idx) {
-        auto pt = first->points[idx];
-        first_cloud.pts[idx].x = pt.x;
-        first_cloud.pts[idx].y = pt.y;
-        first_cloud.pts[idx].z = pt.z;
-    });
+	return;
+}
 
-    using my_kd_tree_t = nanoflann::KDTreeSingleIndexAdaptor<
-        nanoflann::L2_Simple_Adaptor<float, PointCloud_flann<float>>,
-        PointCloud_flann<float>, 3>;
-    my_kd_tree_t flann_knn(3, first_cloud, {10});
-    flann_knn.buildIndex();
+void getLineModel(sad::CloudPtr cloud_in, Eigen::VectorXf& coefficients)
+{
+	pcl::SampleConsensusModelLine<sad::PointType>::Ptr line_model(new pcl::SampleConsensusModelLine<sad::PointType> (cloud_in)); //pcl::SampleConsensusModelPtr
+	// ransac_algo.setSampleConsensusModel(line_model);
 
-    // 比较 bfnn
-    std::vector<std::pair<size_t, size_t>> true_matches;
-    sad::bfnn_cloud_mt_k(first, second, true_matches);
-
-    // 对第2个点云执行knn
-    std::vector<std::pair<size_t, size_t>> matches;
-
-    matches.clear();
+	line_model->setInputCloud(cloud_in);
+    pcl::RandomSampleConsensus<sad::PointType> ransac_algo(line_model);
+	ransac_algo.setDistanceThreshold(0.3);
+	ransac_algo.computeModel();
     
-    std::vector<size_t> index(second->size());
+	ransac_algo.getModelCoefficients(coefficients);
+    // std::cout << "slopes: ";
+    // for (size_t idx = 0; idx < coefficients.size(); idx++)
+    //     std::cout << coefficients[idx] << ", ";
+    // std::cout << std::endl;
+	return; 
+}
 
-    matches.resize(index.size() * 5);
-    auto t1 = std::chrono::high_resolution_clock::now();
-    std::for_each(index.begin(), index.end(), [idx = 0](size_t& i) mutable { i = idx++; });
-    std::for_each(index.begin(), index.end(), [this, &matches, &second, &flann_knn](const size_t& idx) {
-        size_t cp_idx;
-        auto pt = second->points[idx];
-        float query_pt[3] = {pt.x, pt.y, pt.z};
-        size_t                num_results = 5;              // 最近的5个点
-        std::vector<uint32_t> ret_index(num_results);       // 返回的点的索引
-        std::vector<float>    out_dist_sqr(num_results);    // 返回的点的距离
+std::size_t getInlierSize(sad::CloudPtr cloud_in, Eigen::VectorXf coefficients)
+{
+	pcl::SampleConsensusModelLine<sad::PointType>::Ptr line_model(new pcl::SampleConsensusModelLine<sad::PointType> (cloud_in)); //pcl::SampleConsensusModelPtr
+	return line_model->countWithinDistance(coefficients, 0.3);
+}
 
-        num_results = flann_knn.knnSearch(&query_pt[0], num_results, &ret_index[0], &out_dist_sqr[0]);
-        for (int i = 0; i < ret_index.size(); ++i) {
-            matches[idx * 5 + i].first = ret_index[i];
-            matches[idx * 5 + i].second = idx;
+
+bool CheckScanQuality(Scan2d::Ptr scan)
+{
+    sad::CloudPtr cloud(new sad::PointCloudType());
+    cloud->clear();
+    int cloud_size = (scan->angle_max - 30 * M_PI / 180.0 - scan->angle_min - 30 * M_PI / 180.0) / scan->angle_increment+1;
+    std::cout << "cloud_size: " << cloud_size << std::endl;
+    cloud->resize(cloud_size);
+    int idx = 0;
+    for (size_t i = 0; i < scan->ranges.size(); ++i) {
+        if (scan->ranges[i] < scan->range_min || scan->ranges[i] > scan->range_max) {
+            continue;
         }
 
-    });
-    auto t2 = std::chrono::high_resolution_clock::now();
-    auto total_time = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() * 1000;
+        double real_angle = scan->angle_min + i * scan->angle_increment;
+        double x = scan->ranges[i] * std::cos(real_angle);
+        double y = scan->ranges[i] * std::sin(real_angle);
 
-    LOG(INFO) << "方法 " << "NANOFLANN Kd Tree 5NN" << " 平均调用时间/次数: " << total_time << "/1 毫秒.";
-    EvaluateMatches(true_matches, matches);
+        if (real_angle < scan->angle_min + 30 * M_PI / 180.0 || real_angle > scan->angle_max - 30 * M_PI / 180.0) {
+            continue;
+        }
 
-    LOG(INFO) << "done.";
+        cloud->points[idx].x = x;
+        cloud->points[idx].y = y;
+        cloud->points[idx].z = 0;
+        idx++;
+    }
 
-    SUCCEED();
+    std::vector<Eigen::VectorXf> line_coeffs;
+
+    while (cloud->size() > 70)
+    {
+        Eigen::VectorXf curr_coeff = Eigen::Matrix<float, 6, 1>::Zero();
+        getLineModel(cloud, curr_coeff);
+        size_t inlier_size = getInlierSize(cloud, curr_coeff);
+        // std::cout << "inlier size: " << inlier_size << std::endl;
+        
+        if (inlier_size < 30)
+            break;
+        line_coeffs.push_back(curr_coeff);
+        
+
+        // std::cout << "cloud->size() before: " << cloud->size() << std::endl;
+
+        pruneCurrentScan(cloud, curr_coeff, true);
+        // std::cout << "cloud->size() after: " << cloud->size() << std::endl;
+        // break;
+    }
+
+    std::vector<double> slopes;
+
+    for (size_t i = 0; i < line_coeffs.size(); i++)
+    {
+        double dx = line_coeffs[i][3];
+        double dy = line_coeffs[i][4];
+        // std::cout << "slopes: " << dx << ", " << dy << std::endl;
+        
+        slopes.push_back(dy/dx);
+    }
+
+    sort(slopes.begin(), slopes.end());
+    if (((slopes[slopes.size()-1] - slopes[0]) > 0.2) || cloud->size() > 200)
+        std::cout << "The laser scan good" << std::endl;
+    else
+        std::cout << "The laser scan might be degenerate" << std::endl;
+
+    // std::cout << "cloud->size() after: " << cloud->size() << std::endl;
+    std::cout << "slopes: ";
+    for (size_t idx = 0; idx < slopes.size(); idx++)
+        std::cout << slopes[idx] << ", ";
+    std::cout << std::endl;
+    return true;
 }
 ```
 
-跑出来的结果：
+最后将CheckScanQuality（）放在icp之前
 
 ```
-I20230907 14:56:45.584944  7577 test_nn.cc:473] 方法 NANOFLANN Kd Tree 5NN 平均调用时间/次数: 13.4338/1 毫秒.
-I20230907 14:56:45.584970  7577 test_nn.cc:108] truth: 93895, esti: 93895
-I20230907 14:56:48.908072  7577 test_nn.cc:134] precision: 1, recall: 1, fp: 0, fn: 0
-I20230907 14:56:48.908098  7577 test_nn.cc:476] done.
+int main(int argc, char** argv) {
+    google::InitGoogleLogging(argv[0]);
+    FLAGS_stderrthreshold = google::INFO;
+    FLAGS_colorlogtostderr = true;
+    google::ParseCommandLineFlags(&argc, &argv, true);
+
+    sad::RosbagIO rosbag_io(fLS::FLAGS_bag_path);
+    Scan2d::Ptr last_scan = nullptr, current_scan = nullptr;
+
+    /// 我们将上一个scan与当前scan进行配准
+    rosbag_io
+        .AddScan2DHandle("/pavo_scan_bottom",
+                         [&](Scan2d::Ptr scan) {
+                             current_scan = scan;
+
+                             if (last_scan == nullptr) {
+                                 last_scan = current_scan;
+                                 return true;
+                             }
+
+                             sad::Icp2d icp;
+                             icp.SetTarget(last_scan);
+                             icp.SetSource(current_scan);
+
+                             bool scan_good = CheckScanQuality(current_scan);
+
+                             SE2 pose;
+                             if (fLS::FLAGS_method == "point2point") {
+                                 icp.AlignGaussNewton(pose);
+                             } else if (fLS::FLAGS_method == "point2plane") {
+                                 icp.AlignGaussNewtonPoint2Plane(pose);
+                             } else if (fLS::FLAGS_method == "point2point_g2o") {
+                                 icp.AlignGaussNewtonP2P(pose);
+                             } else if (fLS::FLAGS_method == "point2line_g2o") {
+                                 icp.AlignGaussNewtonP2L(pose);
+                             }
+                            
+                             cv::Mat image;
+                             sad::Visualize2DScan(last_scan, SE2(), image, Vec3b(255, 0, 0));    // target是蓝的
+                             sad::Visualize2DScan(current_scan, pose, image, Vec3b(0, 0, 255));  // source是红的
+                             cv::imshow("scan", image);
+                             cv::waitKey(20);
+
+                             last_scan = current_scan;
+                             return true;
+                         })
+        .Go();
+
+    return 0;
+}
 ```
+在只见到侧面的过道是可以比较稳定的找出退化的问题：
 
-在我的电脑上其他算法的速度：
+<img src="P3.png">
 
+在一些大多数点是过道但是还是可以看到其他东西的情况下，有些不稳定
 
-```
-I20230907 14:56:25.992892  7577 sys_utils.h:32] 方法 Kd Tree build 平均调用时间/次数: 6.93181/1 毫秒.
-I20230907 14:56:25.992902  7577 test_nn.cc:284] Kd tree leaves: 18869, points: 18869
-I20230907 14:56:28.940630  7577 sys_utils.h:32] 方法 Kd Tree 5NN 多线程 平均调用时间/次数: 5.66564/1 毫秒.
-I20230907 14:56:28.940672  7577 test_nn.cc:108] truth: 93895, esti: 93895
-I20230907 14:56:32.387584  7577 test_nn.cc:134] precision: 1, recall: 1, fp: 0, fn: 0
-I20230907 14:56:32.387611  7577 test_nn.cc:296] building kdtree pcl
-I20230907 14:56:32.402770  7577 sys_utils.h:32] 方法 Kd Tree build 平均调用时间/次数: 15.1221/1 毫秒.
-I20230907 14:56:32.402798  7577 test_nn.cc:301] searching pcl
-I20230907 14:56:32.457382  7577 sys_utils.h:32] 方法 Kd Tree 5NN in PCL 平均调用时间/次数: 54.5544/1 毫秒.
-I20230907 14:56:32.457669  7577 test_nn.cc:108] truth: 93895, esti: 93895
-I20230907 14:56:36.010355  7577 test_nn.cc:134] precision: 1, recall: 1, fp: 0, fn: 0
-I20230907 14:56:36.010380  7577 test_nn.cc:322] done.
-[       OK ] CH5_TEST.KDTREE_KNN (10032 ms)
-[ RUN      ] CH5_TEST.OCTREE_BASICS
-I20230907 14:56:36.013893  7577 test_nn.cc:354] Octo tree leaves: 4, points: 4
-[       OK ] CH5_TEST.OCTREE_BASICS (0 ms)
-[ RUN      ] CH5_TEST.OCTREE_KNN
-Failed to find match for field 'intensity'.
-Failed to find match for field 'intensity'.
-I20230907 14:56:36.052919  7577 sys_utils.h:32] 方法 Octo Tree build 平均调用时间/次数: 33.6464/1 毫秒.
-I20230907 14:56:36.052945  7577 test_nn.cc:377] Octo tree leaves: 18869, points: 18869
-I20230907 14:56:36.052949  7577 test_nn.cc:380] testing knn
-I20230907 14:56:36.090013  7577 sys_utils.h:32] 方法 Octo Tree 5NN 多线程 平均调用时间/次数: 37.0516/1 毫秒.
+<img src="Screenshot from 2023-09-14 19-23-02.png">
 
-```
-
-可以看出，除了kd tree的速度比nanoflann快之外，其他的速度都比nanoflann慢一些。这几个算法的准确度和召回度也都在100%。
+P4：
+感觉在实际情况下，2d激光雷达还是主要用来做定位，虽然的确可以提供障碍物的信息。用多个其他的传感器，比如rgbd相机或者超声波红外线来给其他高度上的障碍物信息比较好。
