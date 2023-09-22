@@ -73,10 +73,23 @@ bool Icp3d::AlignP2P(SE3& init_pose) {
                 if (!effect_pts[idx]) {
                     return pre;
                 } else {
-                    total_res += errors[idx].dot(errors[idx]);
+                    // total_res += errors[idx].dot(errors[idx]);
+                    // effective_num++;
+                    // return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
+                    //                                pre.second - jacobians[idx].transpose() * errors[idx]);
+                    double c_ = 1.0;
+                    double b_ = 1/c_;
+                    double s = errors[idx].dot(errors[idx]);
+                    double sum = 1 + s * c_;
+                    double inv = 1 / sum;
+
+                    double p_dot = inv;
+                    double p_ddot = - c_ * (inv * inv);
+                    Mat3d info_mat = (p_dot * Mat3d::Identity() + 2 * p_ddot * errors[idx] * errors[idx].transpose());
+                    total_res += b_ * std::log(sum);
                     effective_num++;
                     return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
-                                                   pre.second - jacobians[idx].transpose() * errors[idx]);
+                                                   pre.second - p_dot *jacobians[idx].transpose() * errors[idx]);
                 }
             });
 
@@ -184,10 +197,23 @@ bool Icp3d::AlignP2Plane(SE3& init_pose) {
                 if (!effect_pts[idx]) {
                     return pre;
                 } else {
-                    total_res += errors[idx] * errors[idx];
+                    // total_res += errors[idx] * errors[idx];
+                    // effective_num++;
+                    // return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
+                    //                                pre.second - jacobians[idx].transpose() * errors[idx]);
+                    double c_ = 1.0;
+                    double b_ = 1/c_;
+                    double s = errors[idx] * errors[idx];
+                    double sum = 1 + s * c_;
+                    double inv = 1 / sum;
+
+                    double p_dot = inv;
+                    double p_ddot = - c_ * (inv * inv);
+                    Mat3d info_mat = (p_dot * Mat3d::Identity() + 2 * p_ddot * errors[idx] * errors[idx] * Mat3d::Identity());
+                    total_res += b_ * std::log(sum);
                     effective_num++;
                     return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
-                                                   pre.second - jacobians[idx].transpose() * errors[idx]);
+                                                   pre.second - p_dot *jacobians[idx].transpose() * errors[idx]);
                 }
             });
 
@@ -303,10 +329,23 @@ bool Icp3d::AlignP2Line(SE3& init_pose) {
                 if (!effect_pts[idx]) {
                     return pre;
                 } else {
-                    total_res += errors[idx].dot(errors[idx]);
+                    // total_res += errors[idx].dot(errors[idx]);
+                    // effective_num++;
+                    // return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
+                    //                                pre.second - jacobians[idx].transpose() * errors[idx]);
+                    double c_ = 1.0;
+                    double b_ = 1/c_;
+                    double s = errors[idx].dot(errors[idx]);
+                    double sum = 1 + s * c_;
+                    double inv = 1 / sum;
+
+                    double p_dot = inv;
+                    double p_ddot = - c_ * (inv * inv);
+                    Mat3d info_mat = (p_dot * Mat3d::Identity() + 2 * p_ddot * errors[idx] * errors[idx].transpose());
+                    total_res += b_ * std::log(sum);
                     effective_num++;
                     return std::pair<Mat6d, Vec6d>(pre.first + jacobians[idx].transpose() * jacobians[idx],
-                                                   pre.second - jacobians[idx].transpose() * errors[idx]);
+                                                   pre.second - p_dot *jacobians[idx].transpose() * errors[idx]);
                 }
             });
 

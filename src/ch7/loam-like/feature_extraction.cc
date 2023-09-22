@@ -6,9 +6,51 @@
 
 namespace sad {
 
-void FeatureExtraction::Extract(FullCloudPtr pc_in, CloudPtr pc_out_edge, CloudPtr pc_out_surf) {
+void 
+FeatureExtraction::SegmentGround (CloudPtr pc_all, CloudPtr pc_ground)
+{
+  CloudPtr cloud_pass_through_height(new pcl::PointCloud<PointType>);
+  pcl::PassThrough<PointType> pass_through_height;
+  pass_through_height.setInputCloud(pc_all);
+  pass_through_height.setFilterFieldName("z");
+  pass_through_height.setFilterLimits(-1, 0);
+  pass_through_height.filter(*cloud_pass_through_height);
+
+  Eigen::VectorXf plane_coefficients(4); 
+  pcl::Indices inlier_indices;
+  pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
+  // Perform Sample Concensus
+  pcl::SampleConsensusModelPlane<PointType>::Ptr plane_model_around_ground(new pcl::SampleConsensusModelPlane<PointType> (cloud_pass_through_height));
+  pcl::RandomSampleConsensus<PointType> ransac_algo(plane_model_around_ground, 0.1);
+  ransac_algo.computeModel();
+  ransac_algo.getModelCoefficients(plane_coefficients);
+  pcl::SampleConsensusModelPlane<PointType>::Ptr plane_model_whole(new pcl::SampleConsensusModelPlane<PointType> (pc_all));
+  plane_model_whole->selectWithinDistance(plane_coefficients, 0.10, inlier_indices);
+  inliers->indices = inlier_indices;
+
+  // Extract Inliers from the point cloud
+  // Instantiate extract object
+  pcl::ExtractIndices<PointType> extract;
+  // Set extract parameters
+  extract.setInputCloud (pc_all);
+  extract.setIndices (inliers);
+  extract.setNegative (false);
+  extract.filter (*pc_ground);
+
+  CloudPtr pc_ground_removed(new PointCloudType);
+  extract.setNegative (true);
+  extract.filter (*pc_ground_removed);
+
+  pcl::io::savePCDFileBinaryCompressed("./data/ch7/ground.pcd", *pc_ground);
+  pcl::io::savePCDFileBinaryCompressed("./data/ch7/ground_filtered.pcd", *pc_ground_removed);
+}
+
+void FeatureExtraction::Extract(FullCloudPtr pc_in, CloudPtr pc_out_edge, CloudPtr pc_out_surf, CloudPtr pc_out_ground) {
+
+    
     int num_scans = 16;
     std::vector<CloudPtr> scans_in_each_line;  // 分线数的点云
+    CloudPtr pc_total(new PointCloudType);
     for (int i = 0; i < num_scans; i++) {
         scans_in_each_line.emplace_back(new PointCloudType);
     }
@@ -22,7 +64,13 @@ void FeatureExtraction::Extract(FullCloudPtr pc_in, CloudPtr pc_out_edge, CloudP
         p.intensity = pt.intensity;
 
         scans_in_each_line[pt.ring]->points.emplace_back(p);
+        // std::cout << "********" << std::endl;
+        pc_total->points.emplace_back(p);
     }
+
+    std::cout << "Segmenting Ground " << std::endl;
+
+    SegmentGround(pc_total, pc_out_ground);
 
     // 处理曲率
     for (int i = 0; i < num_scans; i++) {

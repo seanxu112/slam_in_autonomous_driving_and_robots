@@ -6,6 +6,13 @@
 #define SLAM_IN_AUTO_DRIVING_FEATURE_EXTRACTION_H
 
 #include "common/point_types.h"
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/sample_consensus/sac_model_plane.h>
+#include <pcl/io/pcd_io.h>
 
 namespace sad {
 
@@ -31,7 +38,7 @@ class FeatureExtraction {
      * @param pc_out_edge   输出角点的点云
      * @param pc_out_surf   输出平面的点云
      */
-    void Extract(FullCloudPtr pc_in, CloudPtr pc_out_edge, CloudPtr pc_out_surf);
+    void Extract(FullCloudPtr pc_in, CloudPtr pc_out_edge, CloudPtr pc_out_surf, CloudPtr pc_out_ground);
 
     /**
      * 对单独一段区域提取角点和面点
@@ -43,6 +50,7 @@ class FeatureExtraction {
     void ExtractFromSector(const CloudPtr& pc_in, std::vector<IdAndValue>& cloud_curvature, CloudPtr& pc_out_edge,
                            CloudPtr& pc_out_surf);
 
+    void SegmentGround (CloudPtr pc_all, CloudPtr pc_ground);
    private:
 };
 
