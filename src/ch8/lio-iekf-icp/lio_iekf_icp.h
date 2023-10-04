@@ -1,6 +1,7 @@
 #ifndef SAD_CH8_LASER_MAPPING_H
 #define SAD_CH8_LASER_MAPPING_H
 
+#include <deque>
 #include <livox_ros_driver/CustomMsg.h>
 #include <pcl/filters/voxel_grid.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -10,8 +11,8 @@
 #include "ch7/loosely_coupled_lio/cloud_convert.h"
 #include "ch7/loosely_coupled_lio/measure_sync.h"
 #include "ch7/ndt_inc.h"
-#include "ch7/icp_3d.h"
-#include "ch8/lio-iekf/iekf.hpp"
+#include "ch8/lio-iekf-icp/icp_3d.h"
+#include "ch8/lio-iekf-icp/iekf_icp.hpp"
 
 #include "tools/ui/pangolin_window.h"
 
@@ -75,6 +76,7 @@ class LioIEKF {
     /// point clouds data
     FullCloudPtr scan_undistort_{new FullPointCloudType()};  // scan after undistortion
     CloudPtr current_scan_ = nullptr;
+    std::deque<CloudPtr> local_point_cloud;
 
     /// NDT数据
     IncNdt3d ndt_;
